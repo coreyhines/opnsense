@@ -194,7 +194,7 @@ class FirewallTool:
             # Default: get rules
             rules = await self.client.get_firewall_rules()
             return {
-                "rules": [FirewallRule(**rule).dict() for rule in rules],
+                "rules": [FirewallRule(**rule).model_dump() for rule in rules],
                 "status": "success",
             }
         except Exception as e:
