@@ -154,6 +154,15 @@ Available standalone tools:
 - ARP Table: View ARP/NDP entries
 - DHCP Leases: View DHCP lease information
 
+### Cross-Referenced Device Status
+
+The tools now feature cross-referencing between ARP and DHCP data to provide more accurate device status information. This addresses the issue where DHCP might show a device as offline when it's actually online and present in the ARP table.
+
+This feature helps:
+- Identify devices that are online but reported as offline in DHCP
+- Find "ghost" devices that appear in DHCP but are no longer on the network
+- Get a more accurate picture of your network's current state
+
 ## Troubleshooting
 
 - **Import errors**: Ensure all dependencies are installed

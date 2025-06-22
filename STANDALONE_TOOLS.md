@@ -28,31 +28,48 @@ This will display:
 - OS version
 - Connection status
 - Repository status
-- Product information
+- Product info
 
-### ARP Table
+### ARP/NDP Table
 
-You can use the `test_all_tools.py` script to retrieve the ARP table:
-
-```bash
-python test_all_tools.py
-```
-
-This will show:
-- Number of ARP entries
-- Sample entries with IP, MAC, interface, and hostname
-
-### DHCP Leases
-
-The same `test_all_tools.py` script can be used to retrieve DHCP leases:
+The `search_host.py` script allows you to search for hosts in both the ARP/NDP tables and DHCP leases:
 
 ```bash
-python test_all_tools.py
+python search_host.py <hostname_or_ip_or_mac>
 ```
 
-This will display:
-- Number of DHCP leases
-- Sample leases with IP, MAC, hostname, and status
+Use `*` as the search term to get all entries:
+
+```bash
+python search_host.py "*"
+```
+
+### Cross-Referenced Host Status
+
+The updated tools now cross-reference ARP and DHCP data to provide more accurate device status information. This addresses the issue where DHCP might show a device as offline when it's actually online and present in the ARP table.
+
+To test this functionality, you can use:
+
+```bash
+python test_cross_reference.py
+```
+
+This will:
+1. Show DHCP leases with both the reported DHCP status and the actual status based on ARP presence
+2. Show ARP entries with DHCP status information when available
+3. Specifically test for the host "trogdor" in both tables
+
+#### Status Discrepancy Detection
+
+The tools will now detect and report when there's a discrepancy between the DHCP reported status and the actual network status based on ARP table presence. This is useful for:
+
+- Identifying devices that are online but reported as offline in DHCP
+- Finding "ghost" devices that appear in DHCP but are no longer on the network
+- Getting a more accurate picture of your network's current state
+
+## Using with the MCP Server
+
+If you prefer to use the MCP server, these improvements have also been integrated into the ARP and DHCP tools. The server will provide the cross-referenced status information when you use the MCP tools.
 
 ## Testing All Tools
 

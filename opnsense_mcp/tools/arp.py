@@ -24,6 +24,7 @@ class ARPEntry(BaseModel):
     permanent: bool | None = None
     type: str | None = None
     description: str | None = None
+    dhcp_status: str | None = None  # Added field for DHCP status
 
 
 class ARPTool:
@@ -45,6 +46,32 @@ class ARPTool:
                 logger.warning("No OPNsense client available, returning dummy data")
                 return self._get_dummy_data()
 
+            # Get DHCP leases for cross-referencing
+            dhcpv4_leases = await self.client.get_dhcpv4_leases()
+            dhcpv6_leases = await self.client.get_dhcpv6_leases()
+            
+            # Create lookup dictionaries for quick access
+            dhcp_ip_map = {}
+            dhcp_mac_map = {}
+            
+            # Process DHCPv4 leases
+            for lease in dhcpv4_leases:
+                ip = lease.get('ip') or lease.get('address')
+                mac = lease.get('mac')
+                if ip:
+                    dhcp_ip_map[ip] = lease
+                if mac:
+                    dhcp_mac_map[mac.lower()] = lease
+                    
+            # Process DHCPv6 leases
+            for lease in dhcpv6_leases:
+                ip = lease.get('ip') or lease.get('address')
+                mac = lease.get('mac')
+                if ip:
+                    dhcp_ip_map[ip] = lease
+                if mac:
+                    dhcp_mac_map[mac.lower()] = lease
+
             search_query = params.get("search")
             if search_query:
                 # If wildcard or empty, use canonical endpoint for full table
@@ -52,11 +79,11 @@ class ARPTool:
                     arp_data = await self.client.get_arp_table()
                     ndp_data = await self.client.get_ndp_table()
                     arp_entries = [
-                        self._fill_manufacturer(ARPEntry(**entry).model_dump())
+                        self._fill_manufacturer_and_dhcp(ARPEntry(**entry).model_dump(), dhcp_ip_map, dhcp_mac_map)
                         for entry in arp_data
                     ]
                     ndp_entries = [
-                        self._fill_manufacturer(ARPEntry(**entry).model_dump())
+                        self._fill_manufacturer_and_dhcp(ARPEntry(**entry).model_dump(), dhcp_ip_map, dhcp_mac_map)
                         for entry in ndp_data
                     ]
                     return {
@@ -118,12 +145,12 @@ class ARPTool:
                     )
 
                 arp_entries = [
-                    self._fill_manufacturer(ARPEntry(**entry).model_dump())
+                    self._fill_manufacturer_and_dhcp(ARPEntry(**entry).model_dump(), dhcp_ip_map, dhcp_mac_map)
                     for entry in arp_data
                     if match_any(entry)
                 ]
                 ndp_entries = [
-                    self._fill_manufacturer(ARPEntry(**entry).model_dump())
+                    self._fill_manufacturer_and_dhcp(ARPEntry(**entry).model_dump(), dhcp_ip_map, dhcp_mac_map)
                     for entry in ndp_data
                     if match_any(entry)
                 ]
@@ -137,11 +164,11 @@ class ARPTool:
             arp_data = await self.client.get_arp_table()
             ndp_data = await self.client.get_ndp_table()
             arp_entries = [
-                self._fill_manufacturer(ARPEntry(**entry).model_dump())
+                self._fill_manufacturer_and_dhcp(ARPEntry(**entry).model_dump(), dhcp_ip_map, dhcp_mac_map)
                 for entry in arp_data
             ]
             ndp_entries = [
-                self._fill_manufacturer(ARPEntry(**entry).model_dump())
+                self._fill_manufacturer_and_dhcp(ARPEntry(**entry).model_dump(), dhcp_ip_map, dhcp_mac_map)
                 for entry in ndp_data
             ]
 
@@ -183,11 +210,33 @@ class ARPTool:
                 "status": "success",
             }
 
-    def _fill_manufacturer(self, entry):
+    def _fill_manufacturer_and_dhcp(self, entry, dhcp_ip_map, dhcp_mac_map):
+        # Fill manufacturer info
         if not entry.get("manufacturer"):
             mac = entry.get("mac")
             if mac:
                 entry["manufacturer"] = oui_lookup.lookup(mac) or ""
+                
+        # Add DHCP information if available
+        ip = entry.get("ip")
+        mac = entry.get("mac", "").lower() if entry.get("mac") else None
+        
+        # Try to find DHCP info by IP or MAC
+        dhcp_info = None
+        if ip and ip in dhcp_ip_map:
+            dhcp_info = dhcp_ip_map[ip]
+        elif mac and mac in dhcp_mac_map:
+            dhcp_info = dhcp_mac_map[mac]
+            
+        # If DHCP info found, add relevant details
+        if dhcp_info:
+            # Add hostname if missing
+            if not entry.get("hostname") and (dhcp_info.get("hostname") or dhcp_info.get("client-hostname")):
+                entry["hostname"] = dhcp_info.get("hostname") or dhcp_info.get("client-hostname")
+                
+            # Add DHCP status
+            entry["dhcp_status"] = "Online" if dhcp_info.get("online") else "Offline"
+            
         return entry
 
     def _get_dummy_data(self) -> dict[str, Any]:
@@ -199,6 +248,7 @@ class ARPTool:
                     "mac": "aa:bb:cc:dd:ee:ff",
                     "intf": "em0",
                     "manufacturer": "TestCorp",
+                    "dhcp_status": "Online",
                 }
             ],
             "ndp": [
@@ -207,6 +257,7 @@ class ARPTool:
                     "mac": "aa:bb:cc:dd:ee:ff",
                     "intf": "em0",
                     "manufacturer": "TestCorp",
+                    "dhcp_status": "Online",
                 }
             ],
             "status": "success",
