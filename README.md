@@ -139,6 +139,21 @@ Recent firewall log entries for `hostA` (`192.168.1.42`):
 **MCP Response:**
 No LLDP neighbors detected.
 
+## Standalone Tools
+
+For more reliable operation without the MCP server, standalone tools are also available. See [STANDALONE_TOOLS.md](STANDALONE_TOOLS.md) for details.
+
+These standalone tools directly access the OPNsense API without requiring the MCP server to be running, which can be useful when:
+
+- The MCP server is unstable or keeps terminating
+- You need quick access to OPNsense information
+- You want to integrate OPNsense data into other scripts or tools
+
+Available standalone tools:
+- System Status: Get OPNsense system information
+- ARP Table: View ARP/NDP entries
+- DHCP Leases: View DHCP lease information
+
 ## Troubleshooting
 
 - **Import errors**: Ensure all dependencies are installed

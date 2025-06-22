@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
+"""System tool for retrieving OPNsense system status information."""
 
 import logging
-from typing import Any
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel
 
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class SystemStatus(BaseModel):
-    """Model for system status data"""
+    """Model for system status data."""
 
     cpu_usage: float
     memory_usage: float
@@ -21,74 +22,48 @@ class SystemStatus(BaseModel):
 
 
 class SystemTool:
-    def __init__(self, client):
+    """Tool for retrieving system status information from OPNsense."""
+    
+    def __init__(self, client: Any) -> None:
+        """
+        Initialize the SystemTool.
+        
+        Args:
+            client: OPNsense API client
+        """
         self.client = client
 
-    async def execute(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Execute system status check"""
+    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute system status check.
+        
+        Note: If this tool is unstable or the MCP server keeps terminating,
+        consider using the standalone system_status.py script instead.
+        See STANDALONE_TOOLS.md for more information.
+        
+        Args:
+            params: Parameters for the system status check
+            
+        Returns:
+            Dict containing system status information
+        """
         try:
+            logger.info("SystemTool.execute called with params: %s", params)
+            logger.info("Client type: %s", type(self.client).__name__)
+            
             if self.client is None or isinstance(self.client, MockOPNsenseClient):
                 logger.warning(
                     "No real OPNsense client available, returning mock "
                     "system status data"
                 )
-                return await self.client.get_system_status()
-            return await self.client.get_system_status()
+            
+            logger.info("Calling client.get_system_status()")
+            result = await self.client.get_system_status()
+            logger.info("Result from get_system_status: %s", result)
+            return result
         except Exception as e:
-            logger.exception("Failed to get system status")
+            logger.exception("Failed to get system status: %s", e)
             return {
                 "error": f"Failed to get system status: {str(e)}",
                 "status": "error",
             }
-
-    async def _get_system_health(self) -> dict[str, Any]:
-        """Get system health information from various OPNsense endpoints"""
-        try:
-            status_data = {
-                "cpu_usage": 0.0,
-                "memory_usage": 0.0,
-                "filesystem_usage": {},
-                "uptime": "",
-                "versions": {"opnsense": "", "kernel": ""},
-            }
-
-            # Get data from core/system endpoints
-            try:
-                response = await self.client._make_request("GET", "/core/system/status")
-                health_data = response.get("data", {})
-
-                if "cpu" in health_data:
-                    cpu_info = health_data["cpu"]
-                    if isinstance(cpu_info, dict):
-                        status_data["cpu_usage"] = float(
-                            cpu_info.get("used", "0").rstrip("%")
-                        )
-
-                if "memory" in health_data:
-                    mem_info = health_data["memory"]
-                    if isinstance(mem_info, dict):
-                        status_data["memory_usage"] = float(
-                            mem_info.get("used", "0").rstrip("%")
-                        )
-
-                if "filesystems" in health_data:
-                    for fs in health_data["filesystems"]:
-                        if isinstance(fs, dict):
-                            mount = fs.get("mountpoint", "")
-                            used = fs.get("used_percent", "0").rstrip("%")
-                            status_data["filesystem_usage"][mount] = float(used)
-
-                status_data["uptime"] = health_data.get("uptime", "")
-                if "version" in health_data:
-                    status_data["versions"]["opnsense"] = health_data["version"]
-                if "kernel" in health_data:
-                    status_data["versions"]["kernel"] = health_data["kernel"]
-
-            except Exception as e:
-                logger.warning(f"Failed to get system health data: {str(e)}")
-
-        except Exception as e:
-            logger.exception("Failed to get system health information")
-            raise RuntimeError(f"Failed to get system health: {str(e)}") from e
-        else:
-            return status_data
