@@ -42,55 +42,59 @@ class DHCPTool:
                     "No OPNsense client available, returning dummy DHCP data"
                 )
                 return self._get_dummy_data()
-                
+
             # Get DHCP leases
             leases_v4 = await self.client.get_dhcpv4_leases()
             leases_v6 = await self.client.get_dhcpv6_leases()
-            
+
             # Get ARP and NDP tables for cross-referencing
             arp_data = await self.client.get_arp_table()
             ndp_data = await self.client.get_ndp_table()
-            
+
             # Create sets of IPs and MACs in ARP/NDP tables for quick lookup
-            arp_ips = {entry.get('ip') for entry in arp_data if entry.get('ip')}
-            arp_macs = {entry.get('mac') for entry in arp_data if entry.get('mac')}
-            ndp_ips = {entry.get('ip') for entry in ndp_data if entry.get('ip')}
-            ndp_macs = {entry.get('mac') for entry in ndp_data if entry.get('mac')}
-            
+            arp_ips = {entry.get("ip") for entry in arp_data if entry.get("ip")}
+            arp_macs = {entry.get("mac") for entry in arp_data if entry.get("mac")}
+            ndp_ips = {entry.get("ip") for entry in ndp_data if entry.get("ip")}
+            ndp_macs = {entry.get("mac") for entry in ndp_data if entry.get("mac")}
+
             # Process DHCP leases with cross-referenced status
             lease_entries_v4 = []
             for entry in leases_v4:
                 normalized = self._normalize_lease_entry(entry)
-                
+
                 # Cross-reference with ARP table to determine true online status
-                ip = normalized.get('ip')
-                mac = normalized.get('mac')
+                ip = normalized.get("ip")
+                mac = normalized.get("mac")
                 is_in_arp = (ip in arp_ips) or (mac in arp_macs)
-                
+
                 # Use ARP presence to override DHCP status if needed
-                dhcp_status = normalized.get('online', False)
-                actual_status = 'Online' if is_in_arp else ('Online' if dhcp_status else 'Offline')
-                normalized['actual_status'] = actual_status
-                
+                dhcp_status = normalized.get("online", False)
+                actual_status = (
+                    "Online" if is_in_arp else ("Online" if dhcp_status else "Offline")
+                )
+                normalized["actual_status"] = actual_status
+
                 lease_entries_v4.append(DHCPLease(**normalized).model_dump())
-                
+
             # Process DHCPv6 leases with cross-referenced status
             lease_entries_v6 = []
             for entry in leases_v6:
                 normalized = self._normalize_lease_entry(entry)
-                
+
                 # Cross-reference with NDP table to determine true online status
-                ip = normalized.get('ip')
-                mac = normalized.get('mac')
+                ip = normalized.get("ip")
+                mac = normalized.get("mac")
                 is_in_ndp = (ip in ndp_ips) or (mac in ndp_macs)
-                
+
                 # Use NDP presence to override DHCP status if needed
-                dhcp_status = normalized.get('online', False)
-                actual_status = 'Online' if is_in_ndp else ('Online' if dhcp_status else 'Offline')
-                normalized['actual_status'] = actual_status
-                
+                dhcp_status = normalized.get("online", False)
+                actual_status = (
+                    "Online" if is_in_ndp else ("Online" if dhcp_status else "Offline")
+                )
+                normalized["actual_status"] = actual_status
+
                 lease_entries_v6.append(DHCPLease(**normalized).model_dump())
-                
+
             # Determine status
             if leases_v4 is None and leases_v6 is None:
                 dhcp_status = (

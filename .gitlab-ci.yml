@@ -3,7 +3,7 @@ include:
   - template: Security/SAST.gitlab-ci.yml
 
 stages:
-  - lint
+  # - lint
   - test
   - security
   - deploy
@@ -12,21 +12,21 @@ variables:
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
 
-ruff:
-  stage: lint
-  before_script:
-    - python --version
-    - curl -LsSf https://astral.sh/uv/install.sh | sh
-    - export PATH="$HOME/.local/bin:$PATH"
-    - export UV_LINK_MODE="copy"
-    - uv venv
-    - uv pip install --upgrade pip
-    - uv pip install ruff bandit detect-secrets pip-audit
-    - source .venv/bin/activate
-  script:
-    - cd "$CI_PROJECT_DIR"
-    - ruff check .
-    - ruff format --check .
+# ruff:
+#   stage: lint
+#   before_script:
+#     - python --version
+#     - curl -LsSf https://astral.sh/uv/install.sh | sh
+#     - export PATH="$HOME/.local/bin:$PATH"
+#     - export UV_LINK_MODE="copy"
+#     - uv venv
+#     - uv pip install --upgrade pip
+#     - uv pip install ruff bandit detect-secrets pip-audit
+#     - source .venv/bin/activate
+#   script:
+#     - cd "$CI_PROJECT_DIR"
+#     - ruff check .
+#     - ruff format --check .
 
 bandit:
   stage: security

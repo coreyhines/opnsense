@@ -125,7 +125,9 @@ class OPNsenseClient:
         self.config["api_secret"] = self.config.get("api_secret") or os.getenv(
             "OPNSENSE_API_SECRET",
         )
-        self.setup_ssl()
+        self.ssl_verify = self.config.get("ssl_verify", False)
+        if not self.ssl_verify:
+            self.setup_ssl()
         self.base_url = f"https://{self.config['firewall_host']}"
         self.api_base_url = f"{self.base_url}/api"
 
@@ -224,10 +226,16 @@ class OPNsenseClient:
 
             url = f"{self.base_url}{endpoint}"
             kwargs["headers"] = {**kwargs.get("headers", {}), **self.headers}
-            kwargs["verify"] = False
+            kwargs["verify"] = self.ssl_verify
 
             logger.debug(f"Making {method} request to {url}")
+            logger.debug(f"Request headers: {kwargs['headers']}")
+            logger.debug(f"Request params: {kwargs.get('params')}")
+            logger.debug(f"Request json: {kwargs.get('json')}")
             response = requests.request(method, url, **kwargs)
+            logger.debug(f"Response status code: {response.status_code}")
+            logger.debug(f"Response headers: {response.headers}")
+            logger.debug(f"Response text: {response.text[:500]}")
 
             # Check for API errors first (status code 200 but error in JSON)
             if response.status_code == 200:
@@ -303,162 +311,84 @@ class OPNsenseClient:
             return rules
 
     async def get_system_status(self) -> dict[str, Any]:
-        """Get system status from OPNsense with robust redirect and error handling."""
-        try:
-            logger.debug("Fetching system status information...")
-            # Make direct API call to system status endpoint
-            response = None
-            try:
-                response = await self._make_request(
-                    "GET",
-                    ENDPOINTS["system"]["status"],
-                )
-            except ResponseError as e:
-                # Check if this is a redirect or HTML error
-                logger.warning(f"System status endpoint error: {e}")
-                # Try to follow redirect manually if 302
-                url = f"{self.base_url}{ENDPOINTS['system']['status']}"
-                resp = requests.get(
-                    url,
-                    headers=self.headers,
-                    verify=False,
-                    allow_redirects=True,
-                )
-                if resp.status_code == 200:
-                    content_type = resp.headers.get("Content-Type", "")
-                    if "application/json" not in content_type:
-                        logger.exception(
-                            "System status endpoint returned non-JSON (likely HTML). "
-                            "Endpoint may require session or is not available via API.",
-                        )
-                        return {
-                            "cpu_usage": 0.0,
-                            "memory_usage": 0.0,
-                            "filesystem_usage": {},
-                            "uptime": "",
-                            "versions": {"opnsense": "", "kernel": ""},
-                            "error": (
-                                "System status endpoint returned HTML, not JSON. "
-                                "Check API permissions or use a session."
-                            ),
-                        }
-                    try:
-                        response = resp.json()
-                    except Exception as e2:
-                        logger.exception("System status endpoint returned invalid JSON")
-                        return {
-                            "cpu_usage": 0.0,
-                            "memory_usage": 0.0,
-                            "filesystem_usage": {},
-                            "uptime": "",
-                            "versions": {"opnsense": "", "kernel": ""},
-                            "error": (
-                                f"System status endpoint returned invalid JSON: {e2}"
-                            ),
-                        }
-                else:
-                    logger.exception(
-                        "System status endpoint returned status %d",
-                        resp.status_code,
-                    )
-                    return {
-                        "cpu_usage": 0.0,
-                        "memory_usage": 0.0,
-                        "filesystem_usage": {},
-                        "uptime": "",
-                        "versions": {"opnsense": "", "kernel": ""},
-                        "error": (
-                            f"System status endpoint returned status {resp.status_code}"
-                        ),
-                    }
-            if not isinstance(response, dict) or "data" not in response:
-                logger.error("Unexpected response format from status API")
-                return {
-                    "cpu_usage": 0.0,
-                    "memory_usage": 0.0,
-                    "filesystem_usage": {},
-                    "uptime": "",
-                    "versions": {"opnsense": "", "kernel": ""},
-                    "error": "Unexpected response format from status API",
-                }
-            data = response.get("data", {})
-            # Process and structure the data
-            status_data = {
-                "cpu_usage": 0.0,
-                "memory_usage": 0.0,
-                "filesystem_usage": {},
-                "uptime": "",
-                "versions": {"opnsense": "", "kernel": ""},
-                "temperature": {},
-                "interfaces": {},
-                "services": [],
-            }
-            # Extract CPU usage
-            if "cpu" in data:
-                cpu_info = data["cpu"]
-                if isinstance(cpu_info, dict) and "used" in cpu_info:
-                    status_data["cpu_usage"] = float(cpu_info["used"].rstrip("%"))
-            # Extract memory usage
-            if "memory" in data:
-                mem_info = data["memory"]
-                if isinstance(mem_info, dict) and "used" in mem_info:
-                    used_memory = mem_info["used"].rstrip("%")
-                    status_data["memory_usage"] = float(used_memory)
+        """
+        Get system status, including health and version information.
 
-            # Extract CPU usage
-            if "cpu" in data:
-                cpu_info = data["cpu"]
-                if isinstance(cpu_info, dict) and "used" in cpu_info:
-                    used_cpu = cpu_info["used"].rstrip("%")
-                    status_data["cpu_usage"] = float(used_cpu)
-            # Extract filesystem usage
-            if "filesystems" in data:
-                for fs in data["filesystems"]:
-                    if isinstance(fs, dict):
-                        mount = fs.get("mountpoint", "")
-                        used = fs.get("used_percent", "0").rstrip("%")
-                        status_data["filesystem_usage"][mount] = float(used)
-            # Extract version information
-            status_data["uptime"] = data.get("uptime", "")
-            status_data["versions"]["opnsense"] = data.get("version", "")
-            status_data["versions"]["kernel"] = data.get("kernel", "")
-            # Try to fetch additional system information if available
-            try:
-                sys_info = await self._make_request(
-                    "GET",
-                    ENDPOINTS["system"]["information"],
+        Uses the /api/core/firmware/status endpoint which contains system information.
+
+        Returns:
+            A dictionary with system status details.
+
+        """
+        logger.info("get_system_status called")
+        status_data = {
+            "cpu_usage": 0.0,
+            "memory_usage": 0.0,
+            "filesystem_usage": {},
+            "uptime": "",
+            "versions": {"opnsense": "", "kernel": ""},
+            "status": "success",
+        }
+        try:
+            # Get system information from the firmware status endpoint
+            # This is the only endpoint that works reliably across different OPNsense versions
+            logger.info(
+                "Attempting to get system information from /api/core/firmware/status"
+            )
+            info_response = await self._make_request("GET", "/api/core/firmware/status")
+            logger.info("Firmware status response received")
+
+            if info_response:
+                # Extract version information
+                status_data["versions"]["opnsense"] = info_response.get(
+                    "product_version", "N/A"
                 )
-                if isinstance(sys_info, dict):
-                    # Extract temperature data if available
-                    if "temperature" in sys_info:
-                        for sensor in sys_info.get("temperature", []):
-                            if not isinstance(sensor, dict):
-                                continue
-                            if not all(k in sensor for k in ["device", "temperature"]):
-                                continue
-                            status_data["temperature"][sensor["device"]] = sensor[
-                                "temperature"
-                            ]
-                    # Extract any additional system information
-                    if "product" in sys_info:
-                        status_data["versions"]["product"] = sys_info["product"]
-            except Exception as e:
-                logger.warning(
-                    f"Could not fetch additional system information: {e!s}",
+                status_data["versions"]["kernel"] = info_response.get(
+                    "os_version", "N/A"
                 )
-            else:
-                logger.debug(f"Successfully retrieved system status: {status_data}")
-                return status_data
+
+                # Extract more detailed information from the product section if available
+                product = info_response.get("product", {})
+                if product:
+                    if "product_version" in product:
+                        status_data["versions"]["opnsense"] = product["product_version"]
+
+                    # Add additional product information
+                    status_data["product_name"] = product.get(
+                        "product_name", "OPNsense"
+                    )
+                    status_data["product_nickname"] = product.get(
+                        "product_nickname", ""
+                    )
+                    status_data["product_arch"] = product.get("product_arch", "")
+                    status_data["product_copyright"] = product.get(
+                        "product_copyright_owner", ""
+                    )
+
+                # Extract status information
+                status_data["connection"] = info_response.get("connection", "unknown")
+                status_data["repository"] = info_response.get("repository", "unknown")
+                status_data["last_check"] = info_response.get("last_check", "")
+
+                # Add update information
+                status_data["updates_available"] = (
+                    len(info_response.get("upgrade_packages", [])) > 0
+                )
+                status_data["needs_reboot"] = (
+                    info_response.get("needs_reboot", "0") == "1"
+                )
+
+        except RequestError as e:
+            logger.error(f"Request failed while getting system status: {e!s}")
+            status_data["error"] = f"Request failed: {e!s}"
+            status_data["status"] = "error"
         except Exception as e:
-            logger.exception("Failed to get system status")
-            return {
-                "cpu_usage": 0.0,
-                "memory_usage": 0.0,
-                "filesystem_usage": {},
-                "uptime": "",
-                "versions": {"opnsense": "", "kernel": ""},
-                "error": f"Failed to get system status: {e!s}",
-            }
+            logger.exception("An unexpected error occurred getting system status")
+            status_data["error"] = f"An unexpected error occurred: {e!s}"
+            status_data["status"] = "error"
+
+        logger.info("Returning status_data: %s", status_data)
+        return status_data
 
     async def get_interfaces(self) -> list[dict[str, Any]]:
         """Get all interfaces from OPNsense using diagnostics interface."""

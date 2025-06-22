@@ -30,7 +30,7 @@ load_dotenv(os.path.expanduser("~/.opnsense-env"))
 
 def get_opnsense_client():
     """Get OPNsense client based on environment"""
-    host = os.getenv("OPNSENSE_API_HOST")  # Use correct env var name
+    host = os.getenv("OPNSENSE_FIREWALL_HOST")  # Use correct env var name
     api_key = os.getenv("OPNSENSE_API_KEY")
     api_secret = os.getenv("OPNSENSE_API_SECRET")
     ssl_verify = os.getenv("OPNSENSE_SSL_VERIFY", "false").lower() == "true"
@@ -42,7 +42,7 @@ def get_opnsense_client():
                 "firewall_host": host,
                 "api_key": api_key,
                 "api_secret": api_secret,
-                "verify_ssl": ssl_verify,
+                "ssl_verify": ssl_verify,
             }
         )
     logger.warning("No OPNsense credentials found, using mock client")
@@ -526,7 +526,9 @@ def main():
                     rmfw_rule_tool,
                     interface_list_tool,
                 )
-                if response:
+
+                # Only send a response if one was generated and the request had an ID
+                if response and msg_id is not None:
                     print(
                         f"Writing to stdout: {json.dumps(response)}",
                         file=sys.stderr,
@@ -534,16 +536,13 @@ def main():
                     sys.stdout.write(json.dumps(response) + "\n")
                     sys.stdout.flush()
                     logger.debug(f"Sent response: {response}")
-                else:
+                elif msg_id is not None:
                     err = error_response(
                         -32601,
                         f"Method '{message.get('method')}' not found",
                         msg_id,
                     )
-                    print(
-                        f"Writing to stdout: {json.dumps(err)}",
-                        file=sys.stderr,
-                    )
+                    print(f"Writing to stdout: {json.dumps(err)}", file=sys.stderr)
                     sys.stdout.write(json.dumps(err) + "\n")
                     sys.stdout.flush()
 

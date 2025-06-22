@@ -2,7 +2,7 @@
 """System tool for retrieving OPNsense system status information."""
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -23,40 +23,42 @@ class SystemStatus(BaseModel):
 
 class SystemTool:
     """Tool for retrieving system status information from OPNsense."""
-    
+
     def __init__(self, client: Any) -> None:
         """
         Initialize the SystemTool.
-        
+
         Args:
             client: OPNsense API client
+
         """
         self.client = client
 
-    async def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, params: dict[str, Any]) -> dict[str, Any]:
         """
         Execute system status check.
-        
+
         Note: If this tool is unstable or the MCP server keeps terminating,
         consider using the standalone system_status.py script instead.
         See STANDALONE_TOOLS.md for more information.
-        
+
         Args:
             params: Parameters for the system status check
-            
+
         Returns:
             Dict containing system status information
+
         """
         try:
             logger.info("SystemTool.execute called with params: %s", params)
             logger.info("Client type: %s", type(self.client).__name__)
-            
+
             if self.client is None or isinstance(self.client, MockOPNsenseClient):
                 logger.warning(
                     "No real OPNsense client available, returning mock "
                     "system status data"
                 )
-            
+
             logger.info("Calling client.get_system_status()")
             result = await self.client.get_system_status()
             logger.info("Result from get_system_status: %s", result)

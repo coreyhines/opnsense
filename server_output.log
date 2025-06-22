@@ -1,0 +1,6 @@
+SERVER STARTED
+2025-06-21 20:56:01,768 [INFO] Using real OPNsense client
+2025-06-21 20:56:02,348 [INFO] Using Firewall logs endpoint: /api/diagnostics/firewall/log
+2025-06-21 20:56:02,350 [INFO] Using endpoints: DHCPv4 leases: /api/dhcpv4/leases/search_lease, DHCPv6 leases: /api/dhcpv6/leases/search_lease, Firewall logs: /api/diagnostics/firewall/log
+2025-06-21 20:56:02,350 [INFO] Successfully initialized OPNsense clients
+About to enter message loop
