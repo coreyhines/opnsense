@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OPNsense MCP SSE Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            background-color: #f9f9f9;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        pre {
+            background-color: #f1f1f1;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .events {
+            height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-top: 10px;
+            background-color: #fff;
+        }
+        .event-item {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .event-item:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>OPNsense MCP SSE Client</h1>
+    
+    <div class="container">
+        <div class="card">
+            <h2>Server Connection</h2>
+            <div class="form-group">
+                <label for="server-url">Server URL:</label>
+                <input type="text" id="server-url" value="http://localhost:8080" />
+            </div>
+            <button id="connect-btn">Connect</button>
+            <button id="disconnect-btn" disabled>Disconnect</button>
+            <div id="connection-status" class="status disconnected">Disconnected</div>
+        </div>
+        
+        <div class="card">
+            <h2>Available Tools</h2>
+            <button id="list-tools-btn" disabled>List Tools</button>
+            <pre id="tools-list">No tools fetched yet</pre>
+        </div>
+        
+        <div class="card">
+            <h2>Call Tool</h2>
+            <div class="form-group">
+                <label for="tool-select">Select Tool:</label>
+                <select id="tool-select" disabled>
+                    <option value="">-- Select a tool --</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="tool-args">Arguments (JSON):</label>
+                <textarea id="tool-args" rows="5" disabled>{}</textarea>
+            </div>
+            <button id="call-tool-btn" disabled>Call Tool</button>
+            <pre id="tool-result">No results yet</pre>
+        </div>
+        
+        <div class="card">
+            <h2>SSE Events</h2>
+            <div id="sse-status" class="status disconnected">SSE Disconnected</div>
+            <button id="connect-sse-btn" disabled>Connect to SSE</button>
+            <button id="disconnect-sse-btn" disabled>Disconnect SSE</button>
+            <div class="events" id="events-container"></div>
+            
+            <h3>Send Event</h3>
+            <div class="form-group">
+                <label for="event-type">Event Type:</label>
+                <input type="text" id="event-type" value="message" disabled />
+            </div>
+            <div class="form-group">
+                <label for="event-data">Event Data (JSON):</label>
+                <textarea id="event-data" rows="3" disabled>{"message": "Hello from browser!"}</textarea>
+            </div>
+            <button id="send-event-btn" disabled>Send Event</button>
+        </div>
+    </div>
+
+    <script>
+        // Client state
+        const state = {
+            connected: false,
+            sseConnected: false,
+            clientId: generateClientId(),
+            eventSource: null,
+            tools: []
+        };
+
+        // DOM Elements
+        const elements = {
+            serverUrl: document.getElementById('server-url'),
+            connectBtn: document.getElementById('connect-btn'),
+            disconnectBtn: document.getElementById('disconnect-btn'),
+            connectionStatus: document.getElementById('connection-status'),
+            listToolsBtn: document.getElementById('list-tools-btn'),
+            toolsList: document.getElementById('tools-list'),
+            toolSelect: document.getElementById('tool-select'),
+            toolArgs: document.getElementById('tool-args'),
+            callToolBtn: document.getElementById('call-tool-btn'),
+            toolResult: document.getElementById('tool-result'),
+            sseStatus: document.getElementById('sse-status'),
+            connectSseBtn: document.getElementById('connect-sse-btn'),
+            disconnectSseBtn: document.getElementById('disconnect-sse-btn'),
+            eventsContainer: document.getElementById('events-container'),
+            eventType: document.getElementById('event-type'),
+            eventData: document.getElementById('event-data'),
+            sendEventBtn: document.getElementById('send-event-btn')
+        };
+
+        // Event Listeners
+        elements.connectBtn.addEventListener('click', connectToServer);
+        elements.disconnectBtn.addEventListener('click', disconnectFromServer);
+        elements.listToolsBtn.addEventListener('click', listTools);
+        elements.callToolBtn.addEventListener('click', callTool);
+        elements.connectSseBtn.addEventListener('click', connectSSE);
+        elements.disconnectSseBtn.addEventListener('click', disconnectSSE);
+        elements.sendEventBtn.addEventListener('click', sendEvent);
+
+        // Generate a unique client ID
+        function generateClientId() {
+            return 'client-' + Math.random().toString(36).substring(2, 15);
+        }
+
+        // Connect to the server
+        async function connectToServer() {
+            try {
+                const serverUrl = elements.serverUrl.value.trim();
+                if (!serverUrl) {
+                    alert('Please enter a server URL');
+                    return;
+                }
+
+                // Initialize connection
+                const response = await fetch(`${serverUrl}/initialize`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        protocolVersion: '2024-11-05',
+                        clientInfo: { name: 'browser-client' }
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                console.log('Server initialized:', data);
+
+                // Update state and UI
+                state.connected = true;
+                updateConnectionUI(true);
+                addEventMessage('system', `Connected to server: ${JSON.stringify(data.serverInfo)}`);
+            } catch (error) {
+                console.error('Connection error:', error);
+                alert(`Connection error: ${error.message}`);
+                updateConnectionUI(false);
+            }
+        }
+
+        // Disconnect from the server
+        function disconnectFromServer() {
+            // Disconnect SSE if connected
+            if (state.sseConnected) {
+                disconnectSSE();
+            }
+
+            // Update state and UI
+            state.connected = false;
+            updateConnectionUI(false);
+            addEventMessage('system', 'Disconnected from server');
+        }
+
+        // List available tools
+        async function listTools() {
+            try {
+                const serverUrl = elements.serverUrl.value.trim();
+                const response = await fetch(`${serverUrl}/tools`);
+                
+                if (!response.ok) {
+                    throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                console.log('Tools list:', data);
+                
+                // Update state and UI
+                state.tools = data.tools || [];
+                elements.toolsList.textContent = JSON.stringify(data, null, 2);
+                
+                // Update tool select dropdown
+                elements.toolSelect.innerHTML = '<option value="">-- Select a tool --</option>';
+                state.tools.forEach(tool => {
+                    const option = document.createElement('option');
+                    option.value = tool.name;
+                    option.textContent = `${tool.name} - ${tool.description}`;
+                    elements.toolSelect.appendChild(option);
+                });
+                
+                elements.toolSelect.disabled = false;
+                elements.toolArgs.disabled = false;
+                elements.callToolBtn.disabled = false;
+                
+                addEventMessage('system', `Retrieved ${state.tools.length} tools`);
+            } catch (error) {
+                console.error('Error listing tools:', error);
+                alert(`Error listing tools: ${error.message}`);
+            }
+        }
+
+        // Call a tool
+        async function callTool() {
+            try {
+                const serverUrl = elements.serverUrl.value.trim();
+                const toolName = elements.toolSelect.value;
+                
+                if (!toolName) {
+                    alert('Please select a tool');
+                    return;
+                }
+                
+                let args = {};
+                try {
+                    args = JSON.parse(elements.toolArgs.value);
+                } catch (e) {
+                    alert('Invalid JSON in arguments field');
+                    return;
+                }
+                
+                const response = await fetch(`${serverUrl}/tool/${toolName}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(args)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Tool result:', data);
+                
+                // Update UI
+                elements.toolResult.textContent = JSON.stringify(data, null, 2);
+                
+                // If the result has content with text, display it nicely
+                if (data.content && Array.isArray(data.content)) {
+                    const textContent = data.content
+                        .filter(item => item.type === 'text')
+                        .map(item => item.text)
+                        .join('\n');
+                    
+                    if (textContent) {
+                        addEventMessage('tool-result', `${toolName} result: ${textContent}`);
+                    }
+                }
+            } catch (error) {
+                console.error('Error calling tool:', error);
+                alert(`Error calling tool: ${error.message}`);
+                elements.toolResult.textContent = `Error: ${error.message}`;
+            }
+        }
+
+        // Connect to SSE endpoint
+        function connectSSE() {
+            try {
+                const serverUrl = elements.serverUrl.value.trim();
+                
+                // Close existing connection if any
+                if (state.eventSource) {
+                    state.eventSource.close();
+                }
+                
+                // Create new EventSource with client ID header
+                const url = new URL(`${serverUrl}/sse`);
+                const eventSource = new EventSource(url);
+                
+                // Event handlers
+                eventSource.onopen = function() {
+                    console.log('SSE connection opened');
+                    state.sseConnected = true;
+                    updateSSEUI(true);
+                    addEventMessage('system', 'SSE connection established');
+                };
+                
+                eventSource.onerror = function(error) {
+                    console.error('SSE connection error:', error);
+                    state.sseConnected = false;
+                    updateSSEUI(false);
+                    addEventMessage('error', 'SSE connection error');
+                };
+                
+                // Listen for specific events
+                eventSource.addEventListener('connected', function(event) {
+                    console.log('SSE connected event:', event.data);
+                    const data = JSON.parse(event.data);
+                    state.clientId = data.client_id;
+                    addEventMessage('connected', `Connected with client ID: ${state.clientId}`);
+                });
+                
+                eventSource.addEventListener('message', function(event) {
+                    console.log('SSE message event:', event.data);
+                    addEventMessage('message', event.data);
+                });
+                
+                eventSource.addEventListener('test', function(event) {
+                    console.log('SSE test event:', event.data);
+                    addEventMessage('test', event.data);
+                });
+                
+                // Store the event source
+                state.eventSource = eventSource;
+                
+            } catch (error) {
+                console.error('Error connecting to SSE:', error);
+                alert(`Error connecting to SSE: ${error.message}`);
+                state.sseConnected = false;
+                updateSSEUI(false);
+            }
+        }
+
+        // Disconnect from SSE
+        function disconnectSSE() {
+            if (state.eventSource) {
+                state.eventSource.close();
+                state.eventSource = null;
+            }
+            
+            state.sseConnected = false;
+            updateSSEUI(false);
+            addEventMessage('system', 'SSE connection closed');
+        }
+
+        // Send an event to the server
+        async function sendEvent() {
+            try {
+                const serverUrl = elements.serverUrl.value.trim();
+                const eventType = elements.eventType.value.trim();
+                
+                if (!eventType) {
+                    alert('Please enter an event type');
+                    return;
+                }
+                
+                let eventData = {};
+                try {
+                    eventData = JSON.parse(elements.eventData.value);
+                } catch (e) {
+                    alert('Invalid JSON in event data field');
+                    return;
+                }
+                
+                const payload = {
+                    event: eventType,
+                    id: `event-${Date.now()}`,
+                    data: eventData
+                };
+                
+                const response = await fetch(`${serverUrl}/send/${state.clientId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Event sent:', data);
+                addEventMessage('sent', `Sent ${eventType} event: ${JSON.stringify(eventData)}`);
+            } catch (error) {
+                console.error('Error sending event:', error);
+                alert(`Error sending event: ${error.message}`);
+            }
+        }
+
+        // Update connection UI based on state
+        function updateConnectionUI(connected) {
+            if (connected) {
+                elements.connectionStatus.textContent = 'Connected';
+                elements.connectionStatus.className = 'status connected';
+                elements.connectBtn.disabled = true;
+                elements.disconnectBtn.disabled = false;
+                elements.listToolsBtn.disabled = false;
+                elements.connectSseBtn.disabled = false;
+            } else {
+                elements.connectionStatus.textContent = 'Disconnected';
+                elements.connectionStatus.className = 'status disconnected';
+                elements.connectBtn.disabled = false;
+                elements.disconnectBtn.disabled = true;
+                elements.listToolsBtn.disabled = true;
+                elements.toolSelect.disabled = true;
+                elements.toolArgs.disabled = true;
+                elements.callToolBtn.disabled = true;
+                elements.connectSseBtn.disabled = true;
+                elements.disconnectSseBtn.disabled = true;
+                elements.eventType.disabled = true;
+                elements.eventData.disabled = true;
+                elements.sendEventBtn.disabled = true;
+            }
+        }
+
+        // Update SSE UI based on state
+        function updateSSEUI(connected) {
+            if (connected) {
+                elements.sseStatus.textContent = 'SSE Connected';
+                elements.sseStatus.className = 'status connected';
+                elements.connectSseBtn.disabled = true;
+                elements.disconnectSseBtn.disabled = false;
+                elements.eventType.disabled = false;
+                elements.eventData.disabled = false;
+                elements.sendEventBtn.disabled = false;
+            } else {
+                elements.sseStatus.textContent = 'SSE Disconnected';
+                elements.sseStatus.className = 'status disconnected';
+                elements.connectSseBtn.disabled = !state.connected;
+                elements.disconnectSseBtn.disabled = true;
+                elements.eventType.disabled = true;
+                elements.eventData.disabled = true;
+                elements.sendEventBtn.disabled = true;
+            }
+        }
+
+        // Add a message to the events container
+        function addEventMessage(type, message) {
+            const timestamp = new Date().toISOString();
+            const eventItem = document.createElement('div');
+            eventItem.className = 'event-item';
+            eventItem.innerHTML = `<strong>${timestamp}</strong> [${type}]: ${message}`;
+            elements.eventsContainer.appendChild(eventItem);
+            elements.eventsContainer.scrollTop = elements.eventsContainer.scrollHeight;
+        }
+
+        // Initialize UI
+        updateConnectionUI(false);
+        updateSSEUI(false);
+        addEventMessage('system', 'Client initialized');
+    </script>
+</body>
+</html> 

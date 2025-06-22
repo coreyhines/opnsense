@@ -32,49 +32,125 @@ Start the server with:
 python main.py
 ```
 
+## New SSE-Based Server (Beta)
+
+We've added a new server implementation that uses Server-Sent Events (SSE) instead
+of STDIO for communication. This allows for real-time bidirectional communication
+over HTTP, making it easier to integrate with web applications and services.
+
+### Running the SSE Server
+
+Start the SSE server with:
+
+```bash
+python main_sse.py --host 127.0.0.1 --port 8080
+```
+
+### SSE Server Features
+
+- HTTP-based communication with JSON-RPC and REST endpoints
+- Real-time bidirectional communication using Server-Sent Events
+- Support for multiple concurrent clients
+- Compatible with existing MCP tools and clients
+- Web browser integration
+
+### Example SSE Clients
+
+We provide two example clients for the SSE server:
+
+1. Python client: `examples/sse_client.py`
+2. Web browser client: `examples/sse_client.html`
+
+To run the Python client:
+
+```bash
+python examples/sse_client.py --server http://127.0.0.1:8080 --tool system
+```
+
+To use the web client, open `examples/sse_client.html` in a web browser.
+
 ## IDE Integration
 
 - The server is designed for integration with Cursor IDE and other MCP-compatible
   IDEs.
-- All secrets should be stored in `.env` files or `~/.opnsense-env`, not in code.
-- If using an IDE that does not support all dependencies, activate your Python
-  virtual environment (venv) or install any missing packages as needed.
-
-### Example Environment Setup
-
-```bash
-cp examples/.opnsense-env ~/.opnsense-env
-vi ~/.opnsense-env
-```
-
-## Tool Discovery and Invocation
-
-- Tools are discovered and invoked via the MCP protocol (JSON-RPC over stdio),
-  not via HTTP endpoints.
-- The server will advertise available tools (e.g., ARP, DHCP, firewall, system
-  status) to the IDE or MCP client.
-- Tool invocation is handled by sending a JSON-RPC request with the tool name
-  and arguments.
-
-## Authentication
-
-- The server uses JWT-based authentication for internal operations. All secrets
-  and keys must be stored in `.env` or a secure store.
+- The STDIO-based server is compatible with existing MCP clients.
+- The SSE-based server can be used with any HTTP client or SSE-compatible
+  application.
 
 ## Available Tools
 
-The following tools are typically available via the MCP server (actual
-availability may depend on your OPNsense configuration):
+The following tools are available:
 
-- **arp**: Retrieves both IPv4 ARP and IPv6 NDP tables from OPNsense.
-- **dhcp**: Shows DHCPv4 and DHCPv6 lease tables.
-- **system**: Gets system status information including CPU, memory, and
-  filesystem usage.
-- **firewall**: Lists firewall rules on OPNsense.
-- **lldp**: Shows LLDP neighbor table (if supported by the OPNsense API).
+1. `get_logs` - Get firewall logs with optional filtering
+2. `arp` - Show ARP/NDP table
+3. `dhcp` - Show DHCP lease information
+4. `lldp` - Show LLDP neighbor table
+5. `system` - Show system status information
+6. `fw_rules` - Get the current firewall rule set
+7. `mkfw_rule` - Create a new firewall rule
+8. `rmfw_rule` - Delete a firewall rule
+9. `interface_list` - Get available interface names for firewall rules
 
-> **Note:** Tool names and availability may change based on your OPNsense version
-> and configuration. Use your IDE's tool discovery feature to see the current list.
+## Tool Usage Examples
+
+### Get Firewall Logs
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "1",
+  "method": "tools/call",
+  "params": {
+    "name": "get_logs",
+    "arguments": {
+      "limit": 5,
+      "action": "block"
+    }
+  }
+}
+```
+
+### Show ARP Table
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "2",
+  "method": "tools/call",
+  "params": {
+    "name": "arp",
+    "arguments": {
+      "search": "192.168.1.1"
+    }
+  }
+}
+```
+
+### Show DHCP Leases
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "3",
+  "method": "tools/call",
+  "params": {
+    "name": "dhcp",
+    "arguments": {}
+  }
+}
+```
+
+## Security Notes
+
+- Always store API credentials in `.env` files or environment variables, not in
+  code.
+- For production use, generate a secure random string for `MCP_SECRET_KEY`.
+- The SSE server uses CORS headers that allow all origins by default. In
+  production, restrict this to specific allowed origins.
+
+## Development
+
+For development information, see the `docs/PROJECT_GUIDE.md` file.
 
 ## Example MCP Tool Output
 
